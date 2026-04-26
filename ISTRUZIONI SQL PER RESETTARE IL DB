@@ -1,0 +1,131 @@
+-- Disabilita vincoli per la pulizia
+PRAGMA foreign_keys = OFF;
+
+DROP TABLE IF EXISTS Pagelle;
+DROP TABLE IF EXISTS Studenti;
+DROP TABLE IF EXISTS Classi_Sezioni;
+DROP TABLE IF EXISTS Materie;
+
+PRAGMA foreign_keys = ON;
+
+BEGIN TRANSACTION;
+
+-- MATERIE: La colonna bit_mask deve contenere potenze di 2 (1, 2, 4, 8, 16...)
+CREATE TABLE Materie (
+    id_materia INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome_materia TEXT NOT NULL UNIQUE,
+    bit_mask INTEGER NOT NULL UNIQUE
+);
+
+-- CLASSI: materie_piano_studi è la somma delle bit_mask delle materie del corso
+CREATE TABLE Classi_Sezioni (
+    id_coppia INTEGER PRIMARY KEY AUTOINCREMENT,
+    anno INTEGER NOT NULL,
+    sezione TEXT NOT NULL,
+    materie_piano_studi INTEGER NOT NULL,
+    UNIQUE(anno, sezione)
+);
+
+-- STUDENTI: Collegati alla classe tramite id_coppia
+CREATE TABLE Studenti (
+    id_studente INTEGER PRIMARY KEY AUTOINCREMENT,
+    nome_studente TEXT NOT NULL,
+    id_coppia INTEGER NOT NULL,
+    FOREIGN KEY (id_coppia) REFERENCES Classi_Sezioni(id_coppia)
+);
+
+-- PAGELLE: Vincolo di unicità su Studente+Materia+Data
+CREATE TABLE Pagelle (
+    id_pagella INTEGER PRIMARY KEY AUTOINCREMENT,
+    id_studente INTEGER NOT NULL,
+    bit_materia INTEGER NOT NULL, -- Deve essere una bit_mask valida
+    voto REAL NOT NULL,
+    data_voto TEXT NOT NULL,      -- Formato stringa YYYY-MM-DD
+    FOREIGN KEY (id_studente) REFERENCES Studenti(id_studente),
+    FOREIGN KEY (bit_materia) REFERENCES Materie(bit_mask),
+    UNIQUE(id_studente, bit_materia, data_voto)
+);
+
+-- TRIGGER: Il guardiano della coerenza tra Studente e Materia
+CREATE TRIGGER check_piano_studi
+BEFORE INSERT ON Pagelle
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN (
+            SELECT c.materie_piano_studi 
+            FROM Classi_Sezioni c
+            JOIN Studenti s ON s.id_coppia = c.id_coppia
+            WHERE s.id_studente = NEW.id_studente
+        ) & NEW.bit_materia = 0
+        THEN RAISE(ABORT, 'Violazione Piano Studi: Questa materia non è prevista per la classe dello studente.')
+    END;
+END;
+
+
+-- 1. Trigger per l'inserimento di una nuova classe
+CREATE TRIGGER IF NOT EXISTS check_validita_piano_studi_insert
+BEFORE INSERT ON Classi_Sezioni
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN (
+            -- Prende il nuovo piano studi e controlla se contiene bit 
+            -- che non sono presenti nella somma totale delle materie esistenti
+            NEW.materie_piano_studi & ~IFNULL((SELECT SUM(bit_mask) FROM Materie), 0) != 0
+        )
+        THEN RAISE(ABORT, 'ERRORE: Il piano studi contiene materie non censite!')
+    END;
+END;
+
+-- 2. Trigger per la modifica di una classe esistente
+CREATE TRIGGER IF NOT EXISTS check_validita_piano_studi_update
+BEFORE UPDATE OF materie_piano_studi ON Classi_Sezioni
+FOR EACH ROW
+BEGIN
+    SELECT CASE
+        WHEN (
+            NEW.materie_piano_studi & ~IFNULL((SELECT SUM(bit_mask) FROM Materie), 0) != 0
+        )
+        THEN RAISE(ABORT, 'ERRORE: Modifica fallita. Materie non censite nel piano studi!')
+    END;
+END;
+
+COMMIT;
+
+-- Inserimento Materie
+INSERT INTO Materie (nome_materia, bit_mask) VALUES ('Italiano', 1);
+INSERT INTO Materie (nome_materia, bit_mask) VALUES ('Matematica', 2);
+INSERT INTO Materie (nome_materia, bit_mask) VALUES ('Informatica', 4);
+
+-- Inserimento Classe 1A (Somma bit: 1 + 2 = 3)
+INSERT INTO Classi_Sezioni (anno, sezione, materie_piano_studi) VALUES (1, 'A', 3);
+
+-- Inserimento Studente
+INSERT INTO Studenti (nome_studente, id_coppia) VALUES ('Luca Veronesi', 1);
+
+-- TEST POSITIVO: Italiano (1) a Luca (OK!)
+INSERT INTO Pagelle (id_studente, bit_materia, voto, data_voto) VALUES (1, 1, 7.5, '2024-04-25');
+
+-- TEST POSITIVO: Matematica (2) a Luca (OK!)
+INSERT INTO Pagelle (id_studente, bit_materia, voto, data_voto) VALUES (1, 2, 6.0, '2024-04-25');
+
+
+
+-- Inserimento Materie
+INSERT INTO Materie (nome_materia, bit_mask) VALUES ('Italiano', 1);
+INSERT INTO Materie (nome_materia, bit_mask) VALUES ('Matematica', 2);
+INSERT INTO Materie (nome_materia, bit_mask) VALUES ('Informatica', 4);
+
+-- Inserimento Classe 1A (Somma bit: 1 + 2 = 3)
+INSERT INTO Classi_Sezioni (anno, sezione, materie_piano_studi) VALUES (1, 'A', 3);
+
+-- Inserimento Studente
+INSERT INTO Studenti (nome_studente, id_coppia) VALUES ('Luca Veronesi', 1);
+
+-- TEST POSITIVO: Italiano (1) a Luca (OK!)
+INSERT INTO Pagelle (id_studente, bit_materia, voto, data_voto) VALUES (1, 1, 7.5, '2024-04-25');
+
+-- TEST POSITIVO: Matematica (2) a Luca (OK!)
+INSERT INTO Pagelle (id_studente, bit_materia, voto, data_voto) VALUES (1, 2, 6.0, '2024-04-25');
+

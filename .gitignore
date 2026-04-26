@@ -1,0 +1,31 @@
+# Binari e file compilati
+*.exe
+*.dll
+*.dcu
+*.bpl
+*.dcp
+*.dpu
+*.so
+*.apk
+
+# File di configurazione utente e file temporanei
+*.dsk
+*.dof
+*.identcache
+*.otares
+*.local
+*.stat
+*.tvsconfig
+*.~*
+*.bak
+
+# Cartelle di output (se usi le impostazioni predefinite)
+__recovery/
+__history/
+ModelSupport_*/
+Win32/
+Win64/
+Android/
+iOS/
+Debug/
+Release/
